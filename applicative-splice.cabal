@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                applicative-splice
-version:             0.0.1.0
+version:             0.1.0.0
 synopsis:            Write applicative programs in direct style (generalizes idiom brackets).
 description:         This package defines a quasiquoter that lets you write
                      your monadic/applicative programs in direct style, i.e.
