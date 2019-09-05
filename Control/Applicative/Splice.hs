@@ -1,3 +1,4 @@
+{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RankNTypes #-}
@@ -5,6 +6,7 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | This module defines a quasiquoter for making it easier to program with
 -- applicatives and monads.
@@ -128,31 +130,33 @@ bimapApplicativeExp f g = go
     go (AdoJoin binds body) = AdoJoin (map goBind binds) (g body)
     goBind (var, app) = (f var, go app)
 
-quote :: H.Exp -> ApplicativeExp H.Name H.Exp
+quote :: Data l => H.Exp l -> ApplicativeExp (H.Name l) (H.Exp l)
 quote e0 = evalState (go e0) 0
   where
     go e = do
       (body, binds) <- runWriterT (everywhereM' (mkM onSplice) e)
       return $ AdoJoin binds body
 
-    onSplice (H.SpliceExp splice) = do
-      v <- gensym
+    onSplice :: (Data l ,MonadState Int m) => H.Exp l -> WriterT [(H.Name l, ApplicativeExp (H.Name l) (H.Exp l))] m (H.Exp l)
+    onSplice (H.SpliceExp l splice) = do
+      v <- gensym l
       e' <- lift $ go e
       tell [(v, e')]
-      return $ H.Var $ H.UnQual v
+      return $ H.Var l $ H.UnQual l v
       where
         !e = case splice of
-          H.IdSplice str -> H.Var $ H.UnQual $ H.Ident str
-          H.ParenSplice x -> x
+          H.IdSplice l str -> H.Var l $ H.UnQual l $ H.Ident l str
+          H.ParenSplice _ x -> x
     onSplice e = return e
 
-    gensym = do
+    gensym :: MonadState Int m => l -> m (H.Name l)
+    gensym l = do
       n <- get
       put $! n + 1
-      return $ argVar n
+      return $ argVar l n
 
-argVar :: Int -> H.Name
-argVar = H.Ident . ("applicative_splice_" ++) . show
+argVar :: l -> Int -> H.Name l
+argVar l = H.Ident l . ("applicative_splice_" ++) . show
 
 unApplicative :: ApplicativeExp TH.Name TH.Exp -> TH.ExpQ
 unApplicative (AdoJoin (unzip -> (vars, args)) body) = case args of
@@ -173,7 +177,7 @@ unJoin (AdoJoin binds body) = foldr bind (pure body) binds
     bind (v, a) b = [| $(unJoin a) >>= \ $(TH.varP v) -> $b |]
 
 everywhereM' :: (Monad m) => GenericM m -> GenericM m
-everywhereM' f x = do 
+everywhereM' f x = do
   x' <- f x
   gmapM (everywhereM' f) x'
 
